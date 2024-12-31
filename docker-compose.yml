@@ -7,11 +7,11 @@ networks:
         - subnet: 172.34.0.0/24
 
 services:
-  home-index-read-module:
+  home-index-read:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: home-index-read-module
+    container_name: home-index-read
     environment:
       - TZ=America/Los_Angeles
       - WAIT_FOR_DEBUG_CLIENT
@@ -42,9 +42,9 @@ services:
     container_name: home-index
     depends_on:
       - meilisearch
-      - home-index-read-module
+      - home-index-read
     environment:
-      - MODULES=http://home-index-read-module:9000
+      - MODULES=http://home-index-read:9000
       - MEILISEARCH_HOST=http://meilisearch:7700
       - TZ=America/Los_Angeles
     restart: unless-stopped

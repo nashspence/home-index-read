@@ -30,7 +30,7 @@ import gc
 from PIL import Image
 from pdf2image import convert_from_path
 from wand.image import Image as WandImage
-from ..run_server import run_server
+from home_index_module import run_server
 
 
 # endregion
