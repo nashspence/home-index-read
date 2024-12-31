@@ -19,7 +19,6 @@ services:
       - '5678:5678' # debugpy
     restart: unless-stopped
     volumes:
-      - ./bind-mounts/home-index:/storage
       - /home/ns/shared:/files
     networks:
       debug-net:
