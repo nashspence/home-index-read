@@ -1,3 +1,19 @@
+x-gpu-service: &allow-gpu
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: all
+            capabilities: [ gpu ]
+  ulimits:
+    memlock:
+      soft: -1
+      hard: -1
+    stack:
+      soft: 67108864
+      hard: 67108864
+
 services:
   home-index-read:
     build:
@@ -5,13 +21,16 @@ services:
       dockerfile: Dockerfile
     container_name: home-index-read
     environment:
+      - DEBUG=True
       - TZ=America/Los_Angeles
-      - WAIT_FOR_DEBUG_CLIENT
+      - WAIT_FOR_DEBUGPY_CLIENT=True
     ports:
       - '5678:5678' # debugpy
     restart: unless-stopped
     volumes:
-      - ./bind-mounts/test-files:/files
+      - ./bind-mounts/home-index-root:/home-index-root
+      - ./bind-mounts/home-index-read/pytorch:/root/.cache/
+    <<: *allow-gpu
   meilisearch:
     container_name: meilisearch
     environment:
@@ -30,10 +49,11 @@ services:
       - meilisearch
       - home-index-read
     environment:
+      - DEBUG=True
       - MODULES=http://home-index-read:9000
       - MEILISEARCH_HOST=http://meilisearch:7700
       - TZ=America/Los_Angeles
     restart: unless-stopped
     volumes:
-      - ./bind-mounts/home-index:/storage
-      - ./bind-mounts/test-files:/files
+      - ./bind-mounts/home-index:/ome-index
+      - ./bind-mounts/home-index-root:/home-index-root
