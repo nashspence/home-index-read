@@ -29,7 +29,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./bind-mounts/home-index-root:/home-index-root
-      - ./bind-mounts/home-index-read/pytorch:/root/.cache/
+      - ./bind-mounts/home-index-read/pytorch:/root/.cache
     <<: *allow-gpu
   meilisearch:
     container_name: meilisearch
@@ -55,5 +55,5 @@ services:
       - TZ=America/Los_Angeles
     restart: unless-stopped
     volumes:
-      - ./bind-mounts/home-index:/ome-index
+      - ./bind-mounts/home-index:/home-index
       - ./bind-mounts/home-index-root:/home-index-root

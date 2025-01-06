@@ -17,15 +17,12 @@ if str(os.environ.get("WAIT_FOR_DEBUGPY_CLIENT", "False")) == "True":
 # region "import"
 
 
-import easyocr
 import io
 import json
 import logging
 import numpy as np
 import rawpy
-import re
 import torch
-import gc
 
 from PIL import Image
 from pdf2image import convert_from_path
@@ -40,8 +37,10 @@ VERSION = 1
 NAME = os.environ.get("NAME", "read")
 LANGUAGE = os.environ.get("LANGUAGE", "en")
 PYTORCH_DOWNLOAD_ROOT = os.environ.get("PYTORCH_DOWNLOAD_ROOT", "/app/data/pytorch")
+WORKERS = os.environ.get("WORKERS", 1)
+BATCH_SIZE = os.environ.get("BATCH_SIZE", 4)
+GPU = str(os.environ.get("GPU", torch.cuda.is_available())) == "True"
 
-MAX_WIDTH, MAX_HEIGHT = 2000, 2000
 
 PDF_MIME_TYPES = {"application/pdf"}
 
@@ -90,31 +89,25 @@ SUPPORTED_MIME_TYPES = (
 
 
 # endregion
-# region "preprocess image"
-
-
-def preprocess_image(image):
-    width, height = image.size
-    if width > MAX_WIDTH or height > MAX_HEIGHT:
-        scaling_factor = min(MAX_WIDTH / width, MAX_HEIGHT / height)
-        image = image.resize(
-            (int(width * scaling_factor), int(height * scaling_factor)), Image.ANTIALIAS
-        )
-    return image
-
-
-# endregion
 # region "read text"
 
 
 reader = None
 
 
-def extract_text_from_image(image):
+def get_textbox_array(image):
     global reader
     np_image = np.array(image)
-    text = reader.readtext(np_image, detail=0, rotation_info=[0, 90, 180, 270])
+    text = reader.readtext(np_image, workers=WORKERS, batch_size=BATCH_SIZE)
     return " ".join(text).strip()
+
+
+def get_plaintext(data):
+    if isinstance(data, list):
+        return "\n\n".join(filter(None, (get_plaintext(item) for item in data)))
+    elif isinstance(data, str):
+        return data.strip()
+    return ""
 
 
 # endregion
@@ -124,6 +117,7 @@ def extract_text_from_image(image):
 def hello():
     return {
         "name": NAME,
+        "version": VERSION,
         "filterable_attributes": [f"{NAME}.text"],
         "sortable_attributes": [],
     }
@@ -135,10 +129,11 @@ def hello():
 
 def load():
     global reader
+    import easyocr
+
     reader = easyocr.Reader(
         [LANGUAGE],
-        gpu=torch.cuda.is_available(),
-        verbose=False,
+        gpu=GPU,
         model_storage_directory=PYTORCH_DOWNLOAD_ROOT,
         download_enabled=True,
     )
@@ -146,6 +141,8 @@ def load():
 
 def unload():
     global reader
+    import gc
+
     del reader
     gc.collect()
     torch.cuda.empty_cache()
@@ -172,47 +169,45 @@ def run(file_path, document, metadata_dir_path):
     global logging
     logging.info(f"start {file_path}")
 
-    version_path = metadata_dir_path / f"version.json"
-    read_text_path = metadata_dir_path / "text.json"
+    version_path = metadata_dir_path / "version.json"
+    textbox_path = metadata_dir_path / "textbox_array.json"
+    plaintext_path = metadata_dir_path / "plaintext.txt"
 
-    read_text = ""
+    textbox_array = None
 
     mime_type = document.get("type", "")
     if mime_type in STANDARD_IMAGE_MIME_TYPES:
-        image = Image.open(file_path).convert("RGB")
-        read_text = extract_text_from_image(preprocess_image(image))
+        textbox_array = get_textbox_array(Image.open(file_path))
     elif mime_type in RAW_MIME_TYPES:
         with rawpy.imread(file_path) as raw:
             rgb_image = raw.postprocess()
             image_pil = Image.fromarray(rgb_image)
-            read_text = extract_text_from_image(preprocess_image(image_pil))
+            textbox_array = get_textbox_array(image_pil)
     elif mime_type in VECTOR_MIME_TYPES:
         with WandImage(filename=file_path, resolution=300) as img:
             img.format = "png"
             image_blobs = [
                 img.sequence[i].make_blob() for i in range(len(img.sequence))
             ]
-            images = [
-                np.array(preprocess_image(Image.open(io.BytesIO(blob))))
-                for blob in image_blobs
-            ]
+            images = [np.array(Image.open(io.BytesIO(blob))) for blob in image_blobs]
             texts_list = reader.readtext_batched(images, detail=0)
-            read_text = "\n".join([" ".join(texts) for texts in texts_list])
+            textbox_array = "\n".join([" ".join(texts) for texts in texts_list])
     elif mime_type in PDF_MIME_TYPES:
         pages = convert_from_path(file_path, dpi=300)
-        images = [np.array(preprocess_image(page)) for page in pages]
+        images = [np.array(page) for page in pages]
         texts_list = reader.readtext_batched(images, detail=0)
-        read_text = "\n".join([" ".join(texts) for texts in texts_list])
+        textbox_array = "\n".join([" ".join(texts) for texts in texts_list])
+
+    plaintext = get_plaintext(textbox_array)
 
     document[NAME] = {}
-    document[NAME]["text"] = (
-        re.sub(r"\s{2,}", " ", re.sub(r"[^\w\s]+|\s{2,}", " ", str(read_text)))
-        .strip()
-        .lower()
-    )
+    document[NAME]["text"] = plaintext
 
-    with open(read_text_path, "w") as file:
-        json.dump(read_text, file, indent=4)
+    with open(plaintext_path, "w") as file:
+        file.write(plaintext)
+
+    with open(textbox_path, "w") as file:
+        json.dump(textbox_array, file, indent=4)
 
     with open(version_path, "w") as file:
         json.dump({"version": VERSION}, file, indent=4)
