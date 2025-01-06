@@ -23,9 +23,9 @@ import logging
 import numpy as np
 import rawpy
 import torch
+import pdf2image
 
 from PIL import Image
-from pdf2image import convert_from_path
 from wand.image import Image as WandImage
 from home_index_module import run_server
 
@@ -36,9 +36,9 @@ from home_index_module import run_server
 VERSION = 1
 NAME = os.environ.get("NAME", "read")
 LANGUAGE = os.environ.get("LANGUAGE", "en")
-PYTORCH_DOWNLOAD_ROOT = os.environ.get("PYTORCH_DOWNLOAD_ROOT", "/app/data/pytorch")
+PYTORCH_DOWNLOAD_ROOT = os.environ.get("PYTORCH_DOWNLOAD_ROOT", "/root/.cache")
 WORKERS = os.environ.get("WORKERS", 1)
-BATCH_SIZE = os.environ.get("BATCH_SIZE", 4)
+BATCH_SIZE = os.environ.get("BATCH_SIZE", 16)
 GPU = str(os.environ.get("GPU", torch.cuda.is_available())) == "True"
 
 
@@ -89,28 +89,6 @@ SUPPORTED_MIME_TYPES = (
 
 
 # endregion
-# region "read text"
-
-
-reader = None
-
-
-def get_textbox_array(image):
-    global reader
-    np_image = np.array(image)
-    text = reader.readtext(np_image, workers=WORKERS, batch_size=BATCH_SIZE)
-    return " ".join(text).strip()
-
-
-def get_plaintext(data):
-    if isinstance(data, list):
-        return "\n\n".join(filter(None, (get_plaintext(item) for item in data)))
-    elif isinstance(data, str):
-        return data.strip()
-    return ""
-
-
-# endregion
 # region "hello"
 
 
@@ -125,6 +103,9 @@ def hello():
 
 # endregion
 # region "load/unload"
+
+
+reader = None
 
 
 def load():
@@ -166,39 +147,37 @@ def check(file_path, document, metadata_dir_path):
 
 
 def run(file_path, document, metadata_dir_path):
-    global logging
+    global reader
     logging.info(f"start {file_path}")
 
     version_path = metadata_dir_path / "version.json"
     textbox_path = metadata_dir_path / "textbox_array.json"
     plaintext_path = metadata_dir_path / "plaintext.txt"
 
-    textbox_array = None
-
+    images = []
     mime_type = document.get("type", "")
     if mime_type in STANDARD_IMAGE_MIME_TYPES:
-        textbox_array = get_textbox_array(Image.open(file_path))
+        images.append(Image.open(file_path))
     elif mime_type in RAW_MIME_TYPES:
         with rawpy.imread(file_path) as raw:
-            rgb_image = raw.postprocess()
-            image_pil = Image.fromarray(rgb_image)
-            textbox_array = get_textbox_array(image_pil)
+            images.append(Image.fromarray(raw.postprocess()))
     elif mime_type in VECTOR_MIME_TYPES:
-        with WandImage(filename=file_path, resolution=300) as img:
+        with WandImage(filename=file_path) as img:
             img.format = "png"
-            image_blobs = [
-                img.sequence[i].make_blob() for i in range(len(img.sequence))
-            ]
-            images = [np.array(Image.open(io.BytesIO(blob))) for blob in image_blobs]
-            texts_list = reader.readtext_batched(images, detail=0)
-            textbox_array = "\n".join([" ".join(texts) for texts in texts_list])
+            images.append(
+                [
+                    Image.open(io.BytesIO(img.sequence[i].make_blob()))
+                    for i in range(len(img.sequence))
+                ]
+            )
     elif mime_type in PDF_MIME_TYPES:
-        pages = convert_from_path(file_path, dpi=300)
-        images = [np.array(page) for page in pages]
-        texts_list = reader.readtext_batched(images, detail=0)
-        textbox_array = "\n".join([" ".join(texts) for texts in texts_list])
+        images = images.append(pdf2image.convert_from_path(file_path))
 
-    plaintext = get_plaintext(textbox_array)
+    textbox_array = reader.readtext_batched(
+        [np.array(image) for image in images], workers=WORKERS, batch_size=BATCH_SIZE
+    )
+
+    plaintext = " ".join(item[1] for item in textbox_array)
 
     document[NAME] = {}
     document[NAME]["text"] = plaintext
@@ -207,7 +186,16 @@ def run(file_path, document, metadata_dir_path):
         file.write(plaintext)
 
     with open(textbox_path, "w") as file:
-        json.dump(textbox_array, file, indent=4)
+        json.dump(
+            textbox_array,
+            file,
+            indent=4,
+            default=lambda o: (
+                int(o)
+                if isinstance(o, np.integer)
+                else float(o) if isinstance(o, np.floating) else str(o)
+            ),
+        )
 
     with open(version_path, "w") as file:
         json.dump({"version": VERSION}, file, indent=4)
