@@ -7,11 +7,13 @@ RUN apt-get update && apt-get install -y \
     ffmpeg \
     file \
     git \
+    tzdata \
     imagemagick \
     libgomp1 \
     libmagic1 \
-    poppler-utils \
-    tzdata \
+    dcraw \
+    libraw-bin \
+    ghostscript \
     && apt-get clean
 
 WORKDIR /app
