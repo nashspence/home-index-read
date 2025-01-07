@@ -30,6 +30,7 @@ services:
     volumes:
       - ./bind-mounts/home-index-root:/home-index-root
       - ./bind-mounts/home-index-read/pytorch:/root/.cache
+      - ./bind-mounts/home-index-read/imagemagick/policy.xml:/etc/ImageMagick-6/policy.xml
     <<: *allow-gpu
   meilisearch:
     container_name: meilisearch

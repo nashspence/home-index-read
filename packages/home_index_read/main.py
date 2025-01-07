@@ -20,11 +20,8 @@ if str(os.environ.get("WAIT_FOR_DEBUGPY_CLIENT", "False")) == "True":
 import io
 import json
 import logging
-import numpy as np
 import torch
-import cv2
 
-from PIL import Image
 from wand.image import Image as WandImage
 from home_index_module import run_server
 
@@ -37,8 +34,8 @@ VERSION = 1
 NAME = os.environ.get("NAME", "read")
 LANGUAGE = os.environ.get("LANGUAGE", "en")
 PYTORCH_DOWNLOAD_ROOT = os.environ.get("PYTORCH_DOWNLOAD_ROOT", "/root/.cache")
-WORKERS = os.environ.get("WORKERS", 1)
-BATCH_SIZE = os.environ.get("BATCH_SIZE", 36)
+WORKERS = os.environ.get("WORKERS", 2)
+BATCH_SIZE = os.environ.get("BATCH_SIZE", 16)
 GPU = str(os.environ.get("GPU", torch.cuda.is_available())) == "True"
 
 
@@ -47,14 +44,14 @@ GPU = str(os.environ.get("GPU", torch.cuda.is_available())) == "True"
 
 def read_images(file_path):
     images = []
-    with WandImage(filename=file_path) as img:
+    with WandImage(filename=file_path, resolution=300) as img:
         img.format = "png"
         for frame in img.sequence:
-            with WandImage(image=frame) as single_frame:
+            with WandImage(image=frame, resolution=300) as single_frame:
                 single_frame.format = "png"
-                blob = single_frame.make_blob()
-                pillow_image = Image.open(io.BytesIO(blob)).convert("RGB")
-                images.append(cv2.cvtColor(np.array(pillow_image), cv2.COLOR_RGB2BGR))
+                byte_io = io.BytesIO(single_frame.make_blob())
+                images.append(byte_io.getvalue())
+                byte_io.close()
     return images
 
 
@@ -113,7 +110,7 @@ def check(file_path, document, metadata_dir_path):
     try:
         with WandImage(filename=file_path) as img:
             return True
-    except:
+    except Exception as e:
         return False
 
 
@@ -122,22 +119,22 @@ def run(file_path, document, metadata_dir_path):
     logging.info(f"start {file_path}")
 
     version_path = metadata_dir_path / "version.json"
-    textbox_path = metadata_dir_path / "textbox_data.json"
+    textbox_path = metadata_dir_path / "textboxes_per_image.json"
     plaintext_path = metadata_dir_path / "plaintext.txt"
 
+    exception = None
     try:
-        textbox_datas = [
+        textboxes_per_image = [
             reader.readtext(
-                image,
-                workers=WORKERS,
-                batch_size=BATCH_SIZE,
-                paragraph=True
+                image, workers=WORKERS, batch_size=BATCH_SIZE, paragraph=True
             )
             for image in read_images(file_path)
         ]
 
         plaintext = " ".join(
-            textbox[1] for textbox_data in textbox_datas for textbox in textbox_data
+            textbox[1]
+            for image_textboxes in textboxes_per_image
+            for textbox in image_textboxes
         )
 
         document[NAME] = {}
@@ -145,23 +142,14 @@ def run(file_path, document, metadata_dir_path):
 
         with open(plaintext_path, "w") as file:
             file.write(plaintext)
-
         with open(textbox_path, "w") as file:
-            json.dump(
-                textbox_datas,
-                file,
-                indent=4,
-                default=lambda o: (
-                    int(o)
-                    if isinstance(o, np.integer)
-                    else float(o) if isinstance(o, np.floating) else str(o)
-                ),
-            )
+            json.dump(textboxes_per_image, file)
     except Exception as e:
+        exception = e
         logging.exception("failed")
 
     with open(version_path, "w") as file:
-        json.dump({"version": VERSION}, file, indent=4)
+        json.dump({"version": VERSION, "exception": exception}, file, indent=4)
 
     logging.info("done")
     return document
