@@ -17,7 +17,6 @@ if str(os.environ.get("WAIT_FOR_DEBUGPY_CLIENT", "False")) == "True":
 # region "import"
 
 
-import io
 import json
 import logging
 import torch
@@ -32,8 +31,9 @@ from home_index_module import run_server
 
 VERSION = 1
 NAME = os.environ.get("NAME", "read")
-LANGUAGE = os.environ.get("LANGUAGE", "en")
-PYTORCH_DOWNLOAD_ROOT = os.environ.get("PYTORCH_DOWNLOAD_ROOT", "/root/.cache")
+
+LANGUAGES = str(os.environ.get("LANGUAGES", "en")).split(",")
+MODEL_STORAGE_DIRECTORY = os.environ.get("MODEL_STORAGE_DIRECTORY", "/easyocr")
 WORKERS = os.environ.get("WORKERS", 2)
 BATCH_SIZE = os.environ.get("BATCH_SIZE", 16)
 GPU = str(os.environ.get("GPU", torch.cuda.is_available())) == "True"
@@ -49,9 +49,7 @@ def read_images(file_path):
         for frame in img.sequence:
             with WandImage(image=frame, resolution=300) as single_frame:
                 single_frame.format = "png"
-                byte_io = io.BytesIO(single_frame.make_blob())
-                images.append(byte_io.getvalue())
-                byte_io.close()
+                images.append(single_frame.make_blob())
     return images
 
 
@@ -79,9 +77,9 @@ def load():
     import easyocr
 
     reader = easyocr.Reader(
-        [LANGUAGE],
+        LANGUAGES,
         gpu=GPU,
-        model_storage_directory=PYTORCH_DOWNLOAD_ROOT,
+        model_storage_directory=MODEL_STORAGE_DIRECTORY,
         download_enabled=True,
     )
 
@@ -108,9 +106,9 @@ def check(file_path, document, metadata_dir_path):
     if version and version.get("version") == VERSION:
         return False
     try:
-        with WandImage(filename=file_path) as img:
+        with WandImage(filename=file_path):
             return True
-    except Exception as e:
+    except Exception:
         return False
 
 
@@ -124,12 +122,14 @@ def run(file_path, document, metadata_dir_path):
 
     exception = None
     try:
-        textboxes_per_image = [
-            reader.readtext(
-                image, workers=WORKERS, batch_size=BATCH_SIZE, paragraph=True
+        textboxes_per_image = []
+        for image in read_images(file_path):
+            textboxes_per_image.append(
+                reader.readtext(
+                    image, workers=WORKERS, batch_size=BATCH_SIZE, paragraph=True
+                )
             )
-            for image in read_images(file_path)
-        ]
+            torch.cuda.empty_cache()
 
         plaintext = " ".join(
             textbox[1]

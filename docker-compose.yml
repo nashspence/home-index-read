@@ -28,8 +28,8 @@ services:
       - '5678:5678' # debugpy
     restart: unless-stopped
     volumes:
-      - ./bind-mounts/home-index-root:/home-index-root
-      - ./bind-mounts/home-index-read/pytorch:/root/.cache
+      - ./bind-mounts/files:/files
+      - ./bind-mounts/home-index-read/easyocr:/easyocr
       - ./bind-mounts/home-index-read/imagemagick/policy.xml:/etc/ImageMagick-6/policy.xml
     <<: *allow-gpu
   meilisearch:
@@ -57,4 +57,4 @@ services:
     restart: unless-stopped
     volumes:
       - ./bind-mounts/home-index:/home-index
-      - ./bind-mounts/home-index-root:/home-index-root
+      - ./bind-mounts/files:/files
