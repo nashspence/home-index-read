@@ -35,7 +35,7 @@ NAME = os.environ.get("NAME", "read")
 LANGUAGES = str(os.environ.get("LANGUAGES", "en")).split(",")
 MODEL_STORAGE_DIRECTORY = os.environ.get("MODEL_STORAGE_DIRECTORY", "/easyocr")
 WORKERS = os.environ.get("WORKERS", 2)
-BATCH_SIZE = os.environ.get("BATCH_SIZE", 16)
+BATCH_SIZE = os.environ.get("BATCH_SIZE", 8)
 GPU = str(os.environ.get("GPU", torch.cuda.is_available())) == "True"
 
 
@@ -149,7 +149,7 @@ def run(file_path, document, metadata_dir_path):
         logging.exception("failed")
 
     with open(version_path, "w") as file:
-        json.dump({"version": VERSION, "exception": exception}, file, indent=4)
+        json.dump({"version": VERSION, "exception": str(exception)}, file, indent=4)
 
     logging.info("done")
     return document
