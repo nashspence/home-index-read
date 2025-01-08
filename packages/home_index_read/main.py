@@ -145,7 +145,6 @@ def run(file_path, document, metadata_dir_path):
                     image, workers=WORKERS, batch_size=BATCH_SIZE, paragraph=True
                 )
             )
-            torch.cuda.empty_cache()
 
         plaintext = " ".join(
             textbox[1]
