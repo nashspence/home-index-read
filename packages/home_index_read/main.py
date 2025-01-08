@@ -36,9 +36,12 @@ NAME = os.environ.get("NAME", "read")
 
 LANGUAGES = str(os.environ.get("LANGUAGES", "en")).split(",")
 MODEL_STORAGE_DIRECTORY = os.environ.get("MODEL_STORAGE_DIRECTORY", "/easyocr")
-WORKERS = os.environ.get("WORKERS", 2)
-BATCH_SIZE = os.environ.get("BATCH_SIZE", 8)
+WORKERS = os.environ.get("WORKERS", 1)
+BATCH_SIZE = os.environ.get("BATCH_SIZE", 2)
 GPU = str(os.environ.get("GPU", torch.cuda.is_available())) == "True"
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = str(
+    os.environ.get("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+)
 
 
 # endregion
