@@ -37,7 +37,7 @@ NAME = os.environ.get("NAME", "read")
 LANGUAGES = str(os.environ.get("LANGUAGES", "en")).split(",")
 MODEL_STORAGE_DIRECTORY = os.environ.get("MODEL_STORAGE_DIRECTORY", "/easyocr")
 WORKERS = os.environ.get("WORKERS", 1)
-BATCH_SIZE = os.environ.get("BATCH_SIZE", 2)
+BATCH_SIZE = os.environ.get("BATCH_SIZE", 4)
 GPU = str(os.environ.get("GPU", torch.cuda.is_available())) == "True"
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = str(
     os.environ.get("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
@@ -48,13 +48,22 @@ os.environ["PYTORCH_CUDA_ALLOC_CONF"] = str(
 # region "read images"
 
 
-def read_images(file_path):
+def read_images(file_path, max_dimension=1920):
     images = []
     with WandImage(filename=file_path, resolution=300) as img:
         img.format = "png"
         for frame in img.sequence:
             with WandImage(image=frame, resolution=300) as single_frame:
                 single_frame.format = "png"
+                width, height = single_frame.width, single_frame.height
+                if max(width, height) > max_dimension:
+                    if width > height:
+                        new_width = max_dimension
+                        new_height = int((max_dimension / width) * height)
+                    else:
+                        new_height = max_dimension
+                        new_width = int((max_dimension / height) * width)
+                    single_frame.resize(new_width, new_height)
                 images.append(single_frame.make_blob())
     return images
 
