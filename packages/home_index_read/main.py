@@ -22,6 +22,7 @@ if str(os.environ.get("DEBUG", "False")) == "True":
 import json
 import logging
 import torch
+import gc
 
 from wand.image import Image as WandImage
 from home_index_module import run_server
@@ -37,7 +38,7 @@ NAME = os.environ.get("NAME", "read")
 LANGUAGES = str(os.environ.get("LANGUAGES", "en")).split(",")
 MODEL_STORAGE_DIRECTORY = os.environ.get("MODEL_STORAGE_DIRECTORY", "/easyocr")
 WORKERS = os.environ.get("WORKERS", 1)
-BATCH_SIZE = os.environ.get("BATCH_SIZE", 4)
+BATCH_SIZE = os.environ.get("BATCH_SIZE", 6)
 GPU = str(os.environ.get("GPU", torch.cuda.is_available())) == "True"
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = str(
     os.environ.get("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
@@ -105,13 +106,10 @@ def load():
 
 def unload():
     global reader
-    import gc
 
     del reader
     gc.collect()
     torch.cuda.empty_cache()
-    print(f"cuda.memory_allocated={torch.cuda.memory_allocated()}")
-    print(f"cuda.memory_reserved={torch.cuda.memory_reserved()}")
 
 
 # endregion
@@ -150,11 +148,15 @@ def run(file_path, document, metadata_dir_path):
     try:
         textboxes_per_image = []
         for image in read_images(file_path):
+            print(f"cuda.memory_allocated={torch.cuda.memory_allocated()}")
+            print(f"cuda.memory_reserved={torch.cuda.memory_reserved()}")
             textboxes_per_image.append(
                 reader.readtext(
                     image, workers=WORKERS, batch_size=BATCH_SIZE, paragraph=True
                 )
             )
+            gc.collect()
+            torch.cuda.empty_cache()
 
         plaintext = " ".join(
             textbox[1]
