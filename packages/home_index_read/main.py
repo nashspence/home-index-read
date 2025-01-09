@@ -90,6 +90,9 @@ reader = None
 
 def load():
     global reader
+    print(f"cuda.memory_allocated={torch.cuda.memory_allocated()}")
+    print(f"cuda.memory_reserved={torch.cuda.memory_reserved()}")
+
     import easyocr
 
     reader = easyocr.Reader(
@@ -107,6 +110,8 @@ def unload():
     del reader
     gc.collect()
     torch.cuda.empty_cache()
+    print(f"cuda.memory_allocated={torch.cuda.memory_allocated()}")
+    print(f"cuda.memory_reserved={torch.cuda.memory_reserved()}")
 
 
 # endregion
@@ -119,7 +124,12 @@ def check(file_path, document, metadata_dir_path):
     if version_path.exists():
         with open(version_path, "r") as file:
             version = json.load(file)
-    if version and version.get("version") == VERSION:
+
+    if (
+        version
+        and version["version"] == VERSION
+        and version["exception"] != "CUDA failed with error out of memory"
+    ):
         return False
     try:
         with WandImage(filename=file_path):
