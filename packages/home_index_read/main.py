@@ -128,7 +128,7 @@ def check(file_path, document, metadata_dir_path):
     if (
         version
         and version["version"] == VERSION
-        and version["exception"] != "CUDA failed with error out of memory"
+        and not version["exception"].startswith("CUDA out of memory.")
     ):
         return False
     try:
