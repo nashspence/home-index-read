@@ -123,12 +123,12 @@ def check(file_path, document, metadata_dir_path):
         with open(version_path, "r") as file:
             version = json.load(file)
 
-    if (
-        version
-        and version["version"] == VERSION
-        and not version["exception"].startswith("CUDA out of memory.")
-    ):
+    if version and version["version"] == VERSION:
         return False
+
+    if document["type"].startswith("video/") or document["type"].startswith("audio/"):
+        return False
+
     try:
         with WandImage(filename=file_path):
             return True
@@ -144,15 +144,14 @@ def run(file_path, document, metadata_dir_path):
     textbox_path = metadata_dir_path / "textboxes_per_image.json"
     plaintext_path = metadata_dir_path / "plaintext.txt"
 
-    exception = None
-    try:
+    def attempt(batch_size=BATCH_SIZE):
         textboxes_per_image = []
         for image in read_images(file_path):
             print(f"cuda.memory_allocated={torch.cuda.memory_allocated()}")
             print(f"cuda.memory_reserved={torch.cuda.memory_reserved()}")
             textboxes_per_image.append(
                 reader.readtext(
-                    image, workers=WORKERS, batch_size=BATCH_SIZE, paragraph=True
+                    image, workers=WORKERS, batch_size=batch_size, paragraph=True
                 )
             )
             gc.collect()
@@ -171,9 +170,21 @@ def run(file_path, document, metadata_dir_path):
             file.write(plaintext)
         with open(textbox_path, "w") as file:
             json.dump(textboxes_per_image, file)
+
+    exception = None
+    try:
+        attempt()
     except Exception as e:
-        exception = e
-        logging.exception("failed")
+        if str(e).startswith("CUDA out of memory."):
+            try:
+                logging.warning("CUDA out of memory. Retrying with BATCH_SIZE=1.")
+                attempt(1)
+            except Exception as e:
+                exception = e
+                logging.exception("failed")
+        else:
+            exception = e
+            logging.exception("failed")
 
     with open(version_path, "w") as file:
         json.dump({"version": VERSION, "exception": str(exception)}, file, indent=4)
