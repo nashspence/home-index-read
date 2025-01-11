@@ -23,7 +23,10 @@ import json
 import logging
 import torch
 import gc
+import subprocess
+import mimetypes
 
+from pathlib import Path
 from wand.image import Image as WandImage
 from home_index_module import run_server
 
@@ -91,9 +94,6 @@ reader = None
 
 def load():
     global reader
-    print(f"cuda.memory_allocated={torch.cuda.memory_allocated()}")
-    print(f"cuda.memory_reserved={torch.cuda.memory_reserved()}")
-
     import easyocr
 
     reader = easyocr.Reader(
@@ -116,24 +116,54 @@ def unload():
 # region "check/run"
 
 
+def get_supported_formats():
+    result = subprocess.run(
+        ["identify", "-list", "format"], capture_output=True, text=True
+    )
+    lines = result.stdout.splitlines()
+    supported = set()
+    for line in lines:
+        line = line.strip()
+        if line and not line.startswith("-") and not line.startswith("Format"):
+            parts = line.split()
+            if len(parts) >= 2:
+                ext = parts[0].lower().rstrip("*")
+                modes = parts[2]
+                if "r" in modes:
+                    supported.add(ext)
+    return supported
+
+
+SUPPORTED_FORMATS = get_supported_formats()
+
+
+def get_extensions_from_mime(mime_type):
+    return mimetypes.guess_all_extensions(mime_type)
+
+
+def can_wand_open(mime_type):
+    extensions = get_extensions_from_mime(mime_type)
+    for ext in extensions:
+        if ext.lstrip(".").lower() in SUPPORTED_FORMATS:
+            return True
+    return False
+
+
 def check(file_path, document, metadata_dir_path):
     version_path = metadata_dir_path / "version.json"
     version = None
+
     if version_path.exists():
         with open(version_path, "r") as file:
             version = json.load(file)
 
-    if version and version["version"] == VERSION:
+    if version and version.get("version") == VERSION:
         return False
 
     if document["type"].startswith("video/") or document["type"].startswith("audio/"):
         return False
 
-    try:
-        with WandImage(filename=file_path):
-            return True
-    except Exception:
-        return False
+    return can_wand_open(document["type"])
 
 
 def run(file_path, document, metadata_dir_path):
@@ -147,8 +177,6 @@ def run(file_path, document, metadata_dir_path):
     def attempt(batch_size=BATCH_SIZE):
         textboxes_per_image = []
         for image in read_images(file_path):
-            print(f"cuda.memory_allocated={torch.cuda.memory_allocated()}")
-            print(f"cuda.memory_reserved={torch.cuda.memory_reserved()}")
             textboxes_per_image.append(
                 reader.readtext(
                     image, workers=WORKERS, batch_size=batch_size, paragraph=True
