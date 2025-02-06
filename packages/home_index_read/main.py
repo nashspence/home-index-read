@@ -160,11 +160,7 @@ def check(file_path, document, metadata_dir_path):
     if version and version.get("version") == VERSION:
         return False
 
-    if (
-        document["type"].startswith("video/")
-        or document["type"].startswith("audio/")
-        or document["type"].startswith("multipart/appledouble")
-    ):
+    if document["type"].startswith("video/") or document["type"].startswith("audio/"):
         return False
 
     return can_wand_open(document["type"])
@@ -218,8 +214,11 @@ def run(file_path, document, metadata_dir_path):
             exception = e
             logging.exception("failed")
 
+    version = {"version": VERSION}
+    if exception:
+        version["exception"] = str(exception)
     with open(version_path, "w") as file:
-        json.dump({"version": VERSION, "exception": str(exception)}, file, indent=4)
+        json.dump(version, file, indent=4)
 
     logging.info("done")
     return document
